@@ -27,8 +27,12 @@ volatile PALINPUTSTATE   g_InputState;
 static SDL_Joystick     *g_pJoy = NULL;
 #if SDL_VERSION_ATLEAST(3,0,0)
 static SDL_Gamepad      *g_pGamepad = NULL;
+static SDL_GamepadButton g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_SOUTH;
+static SDL_GamepadButton g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_EAST;
 #elif SDL_VERSION_ATLEAST(2,0,0)
 static SDL_GameController *g_pGameController = NULL;
+static Uint8            g_ControllerConfirmButton = SDL_CONTROLLER_BUTTON_A;
+static Uint8            g_ControllerCancelButton = SDL_CONTROLLER_BUTTON_B;
 #endif
 #endif
 
@@ -54,6 +58,113 @@ BOOL                     g_fUseJoystick = TRUE;
 static void _default_init_filter() {}
 static int _default_input_event_filter(const SDL_Event *event, volatile PALINPUTSTATE *state) { return 0; }
 static void _default_input_shutdown_filter() {}
+
+#if PAL_HAS_JOYSTICKS
+#if SDL_VERSION_ATLEAST(3,0,0)
+static VOID
+PAL_UpdateGamepadButtonMapping(
+   VOID
+)
+{
+   g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_SOUTH;
+   g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_EAST;
+
+   if (g_pGamepad == NULL)
+   {
+      return;
+   }
+
+   SDL_GamepadButtonLabel south = SDL_GetGamepadButtonLabel(g_pGamepad, SDL_GAMEPAD_BUTTON_SOUTH);
+   SDL_GamepadButtonLabel east = SDL_GetGamepadButtonLabel(g_pGamepad, SDL_GAMEPAD_BUTTON_EAST);
+
+   if (south == SDL_GAMEPAD_BUTTON_LABEL_A || south == SDL_GAMEPAD_BUTTON_LABEL_CROSS)
+   {
+      g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_SOUTH;
+      g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_EAST;
+      return;
+   }
+   if (east == SDL_GAMEPAD_BUTTON_LABEL_A || east == SDL_GAMEPAD_BUTTON_LABEL_CROSS)
+   {
+      g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_EAST;
+      g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_SOUTH;
+      return;
+   }
+   if (south == SDL_GAMEPAD_BUTTON_LABEL_B || south == SDL_GAMEPAD_BUTTON_LABEL_CIRCLE)
+   {
+      g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_EAST;
+      g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_SOUTH;
+      return;
+   }
+   if (east == SDL_GAMEPAD_BUTTON_LABEL_B || east == SDL_GAMEPAD_BUTTON_LABEL_CIRCLE)
+   {
+      g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_SOUTH;
+      g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_EAST;
+      return;
+   }
+
+#if defined(SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO) || defined(SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT) || \
+    defined(SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT) || defined(SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR)
+   switch (SDL_GetGamepadType(g_pGamepad))
+   {
+#ifdef SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO
+   case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+#endif
+#ifdef SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT
+   case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+#endif
+#ifdef SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT
+   case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+#endif
+#ifdef SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR
+   case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+#endif
+      g_GamepadConfirmButton = SDL_GAMEPAD_BUTTON_EAST;
+      g_GamepadCancelButton = SDL_GAMEPAD_BUTTON_SOUTH;
+      break;
+   default:
+      break;
+   }
+#endif
+}
+#elif SDL_VERSION_ATLEAST(2,0,0)
+static VOID
+PAL_UpdateGamepadButtonMapping(
+   VOID
+)
+{
+   g_ControllerConfirmButton = SDL_CONTROLLER_BUTTON_A;
+   g_ControllerCancelButton = SDL_CONTROLLER_BUTTON_B;
+
+   if (g_pGameController == NULL)
+   {
+      return;
+   }
+
+ #if SDL_VERSION_ATLEAST(2,0,12)
+   switch (SDL_GameControllerGetType(g_pGameController))
+   {
+#ifdef SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO
+   case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+#endif
+#ifdef SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT
+   case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+#endif
+#ifdef SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT
+   case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+#endif
+#ifdef SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR
+   case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+#endif
+      g_ControllerConfirmButton = SDL_CONTROLLER_BUTTON_B;
+      g_ControllerCancelButton = SDL_CONTROLLER_BUTTON_A;
+      break;
+   default:
+      break;
+   }
+ #endif
+}
+#endif
+#endif
 
 static void (*input_init_filter)() = _default_init_filter;
 static int (*input_event_filter)(const SDL_Event *, volatile PALINPUTSTATE *) = _default_input_event_filter;
@@ -169,6 +280,7 @@ PAL_DetectJoystick(
         }
     }
     SDL_free(joysticks);
+    PAL_UpdateGamepadButtonMapping();
 #elif SDL_VERSION_ATLEAST(2,0,0)
     if (g_pGameController != NULL)
     {
@@ -216,6 +328,7 @@ PAL_DetectJoystick(
             SDL_JoystickEventState(SDL_ENABLE);
         }
     }
+    PAL_UpdateGamepadButtonMapping();
 #else
     if (SDL_NumJoysticks() > 0 && g_fUseJoystick)
     {
@@ -732,6 +845,15 @@ PAL_JoystickEventFilter(
        break;
 #endif
 #if SDL_VERSION_ATLEAST(3,0,0)
+   case SDL_EVENT_GAMEPAD_REMAPPED:
+      PAL_UpdateGamepadButtonMapping();
+      break;
+#elif SDL_VERSION_ATLEAST(2,0,0)
+   case SDL_CONTROLLERDEVICEREMAPPED:
+      PAL_UpdateGamepadButtonMapping();
+      break;
+#endif
+#if SDL_VERSION_ATLEAST(3,0,0)
    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
       g_InputState.joystickNeedUpdate = TRUE;
       switch (lpEvent->gaxis.axis)
@@ -790,18 +912,17 @@ PAL_JoystickEventFilter(
             g_InputState.dpadY = down ? 1 : (g_InputState.dpadY == 1 ? 0 : g_InputState.dpadY);
             g_InputState.joystickNeedUpdate = TRUE;
             break;
-         case SDL_GAMEPAD_BUTTON_SOUTH:
-            if (down)
+         }
+         if (down)
+         {
+            if (lpEvent->gbutton.button == g_GamepadConfirmButton)
             {
                g_InputState.dwKeyPress |= kKeySearch;
             }
-            break;
-         case SDL_GAMEPAD_BUTTON_EAST:
-            if (down)
+            else if (lpEvent->gbutton.button == g_GamepadCancelButton)
             {
                g_InputState.dwKeyPress |= kKeyMenu;
             }
-            break;
          }
       }
       break;
@@ -864,18 +985,17 @@ PAL_JoystickEventFilter(
             g_InputState.dpadY = down ? 1 : (g_InputState.dpadY == 1 ? 0 : g_InputState.dpadY);
             g_InputState.joystickNeedUpdate = TRUE;
             break;
-         case SDL_CONTROLLER_BUTTON_A:
-            if (down)
+         }
+         if (down)
+         {
+            if (lpEvent->cbutton.button == g_ControllerConfirmButton)
             {
                g_InputState.dwKeyPress |= kKeySearch;
             }
-            break;
-         case SDL_CONTROLLER_BUTTON_B:
-            if (down)
+            else if (lpEvent->cbutton.button == g_ControllerCancelButton)
             {
                g_InputState.dwKeyPress |= kKeyMenu;
             }
-            break;
          }
       }
       break;
@@ -974,11 +1094,11 @@ PAL_JoystickEventFilter(
       switch (lpEvent->jbutton.button)
       {
       case 0:
-         g_InputState.dwKeyPress |= kKeyMenu;
+         g_InputState.dwKeyPress |= kKeySearch;
          break;
 
       case 1:
-         g_InputState.dwKeyPress |= kKeySearch;
+         g_InputState.dwKeyPress |= kKeyMenu;
          break;
       }
       break;
