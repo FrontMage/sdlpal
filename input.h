@@ -33,6 +33,7 @@ typedef struct tagPALINPUTSTATE
    DWORD                  dwKeyMaxCount;
 #if PAL_HAS_JOYSTICKS
    int                    axisX,axisY;
+   int                    dpadX,dpadY;
    BOOL                   joystickNeedUpdate;
 #endif
 } PALINPUTSTATE;

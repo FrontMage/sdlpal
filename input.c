@@ -25,6 +25,11 @@
 volatile PALINPUTSTATE   g_InputState;
 #if PAL_HAS_JOYSTICKS
 static SDL_Joystick     *g_pJoy = NULL;
+#if SDL_VERSION_ATLEAST(3,0,0)
+static SDL_Gamepad      *g_pGamepad = NULL;
+#elif SDL_VERSION_ATLEAST(2,0,0)
+static SDL_GameController *g_pGameController = NULL;
+#endif
 #endif
 
 #if !SDL_VERSION_ATLEAST(2,0,0)
@@ -111,7 +116,18 @@ PAL_DetectJoystick(
 --*/
 {
 #if SDL_VERSION_ATLEAST(3,0,0)
-    int numjoysticks;
+    if (g_pGamepad != NULL)
+    {
+        SDL_CloseGamepad(g_pGamepad);
+        g_pGamepad = NULL;
+    }
+    if (g_pJoy != NULL)
+    {
+        SDL_CloseJoystick(g_pJoy);
+        g_pJoy = NULL;
+    }
+
+    int numjoysticks = 0;
     SDL_JoystickID* joysticks = SDL_GetJoysticks(&numjoysticks);
     if (numjoysticks > 0 && g_fUseJoystick)
     {
@@ -119,16 +135,86 @@ PAL_DetectJoystick(
         for (i = 0; i < numjoysticks; i++)
         {
             SDL_JoystickID instance_id = joysticks[i];
-            if (PAL_IS_VALID_JOYSTICK(SDL_GetJoystickNameForID(instance_id)))
+            const char *name = SDL_GetJoystickNameForID(instance_id);
+            if (!PAL_IS_VALID_JOYSTICK(name))
             {
-                g_pJoy = SDL_OpenJoystick(instance_id);
+                continue;
+            }
+            if (SDL_IsGamepad(instance_id))
+            {
+                g_pGamepad = SDL_OpenGamepad(instance_id);
+                if (g_pGamepad != NULL)
+                {
+                    break;
+                }
+            }
+            g_pJoy = SDL_OpenJoystick(instance_id);
+            if (g_pJoy != NULL)
+            {
                 break;
             }
         }
-        UTIL_LogOutput(LOGLEVEL_DEBUG, "PAL_DetectJoystick: %d joysticks found; choose %s\n", numjoysticks, SDL_GetJoystickName(g_pJoy));
-        UTIL_LogOutput(LOGLEVEL_DEBUG, "This joystick has %d axes, %d hats, %d balls, and %d buttons\n",
-            SDL_GetNumJoystickAxes(g_pJoy), SDL_GetNumJoystickHats(g_pJoy),
-            SDL_GetNumJoystickBalls(g_pJoy), SDL_GetNumJoystickButtons(g_pJoy));
+        if (g_pGamepad != NULL)
+        {
+            UTIL_LogOutput(LOGLEVEL_DEBUG, "PAL_DetectJoystick: %d joysticks found; choose gamepad %s\n",
+                numjoysticks, SDL_GetGamepadName(g_pGamepad));
+        }
+        else if (g_pJoy != NULL)
+        {
+            UTIL_LogOutput(LOGLEVEL_DEBUG, "PAL_DetectJoystick: %d joysticks found; choose %s\n",
+                numjoysticks, SDL_GetJoystickName(g_pJoy));
+            UTIL_LogOutput(LOGLEVEL_DEBUG, "This joystick has %d axes, %d hats, %d balls, and %d buttons\n",
+                SDL_GetNumJoystickAxes(g_pJoy), SDL_GetNumJoystickHats(g_pJoy),
+                SDL_GetNumJoystickBalls(g_pJoy), SDL_GetNumJoystickButtons(g_pJoy));
+        }
+    }
+    SDL_free(joysticks);
+#elif SDL_VERSION_ATLEAST(2,0,0)
+    if (g_pGameController != NULL)
+    {
+        SDL_GameControllerClose(g_pGameController);
+        g_pGameController = NULL;
+    }
+    if (g_pJoy != NULL)
+    {
+        SDL_JoystickClose(g_pJoy);
+        g_pJoy = NULL;
+    }
+
+    if (SDL_NumJoysticks() > 0 && g_fUseJoystick)
+    {
+        int i;
+        for (i = 0; i < SDL_NumJoysticks(); i++)
+        {
+            if (PAL_IS_VALID_JOYSTICK(SDL_JoystickNameForIndex(i)))
+            {
+                if (SDL_IsGameController(i))
+                {
+                    g_pGameController = SDL_GameControllerOpen(i);
+                    if (g_pGameController != NULL)
+                    {
+                        break;
+                    }
+                }
+                g_pJoy = SDL_JoystickOpen(i);
+                if (g_pJoy != NULL)
+                {
+                    break;
+                }
+            }
+        }
+
+        if (g_pGameController != NULL)
+        {
+            SDL_GameControllerEventState(SDL_ENABLE);
+        }
+        if (g_pJoy != NULL)
+        {
+            //
+            //! CANNOT BE DISABLED OR HOTPLUG STOPS WORK
+            //
+            SDL_JoystickEventState(SDL_ENABLE);
+        }
     }
 #else
     if (SDL_NumJoysticks() > 0 && g_fUseJoystick)
@@ -152,10 +238,6 @@ PAL_DetectJoystick(
         }
     }
 #endif
-    else
-    {
-        g_pJoy = NULL;
-    }
 }
 #endif
 
@@ -649,6 +731,155 @@ PAL_JoystickEventFilter(
        PAL_DetectJoystick();
        break;
 #endif
+#if SDL_VERSION_ATLEAST(3,0,0)
+   case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+      g_InputState.joystickNeedUpdate = TRUE;
+      switch (lpEvent->gaxis.axis)
+      {
+      case SDL_GAMEPAD_AXIS_LEFTX:
+         if (lpEvent->gaxis.value > 3200)
+         {
+            g_InputState.axisX = 1;
+         }
+         else if (lpEvent->gaxis.value < -3200)
+         {
+            g_InputState.axisX = -1;
+         }
+         else
+         {
+            g_InputState.axisX = 0;
+         }
+         break;
+
+      case SDL_GAMEPAD_AXIS_LEFTY:
+         if (lpEvent->gaxis.value > 3200)
+         {
+            g_InputState.axisY = 1;
+         }
+         else if (lpEvent->gaxis.value < -3200)
+         {
+            g_InputState.axisY = -1;
+         }
+         else
+         {
+            g_InputState.axisY = 0;
+         }
+         break;
+      }
+      break;
+
+   case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+   case SDL_EVENT_GAMEPAD_BUTTON_UP:
+      {
+         BOOL down = (lpEvent->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN);
+         switch (lpEvent->gbutton.button)
+         {
+         case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+            g_InputState.dpadX = down ? -1 : (g_InputState.dpadX == -1 ? 0 : g_InputState.dpadX);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+            g_InputState.dpadX = down ? 1 : (g_InputState.dpadX == 1 ? 0 : g_InputState.dpadX);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_GAMEPAD_BUTTON_DPAD_UP:
+            g_InputState.dpadY = down ? -1 : (g_InputState.dpadY == -1 ? 0 : g_InputState.dpadY);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+            g_InputState.dpadY = down ? 1 : (g_InputState.dpadY == 1 ? 0 : g_InputState.dpadY);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_GAMEPAD_BUTTON_SOUTH:
+            if (down)
+            {
+               g_InputState.dwKeyPress |= kKeySearch;
+            }
+            break;
+         case SDL_GAMEPAD_BUTTON_EAST:
+            if (down)
+            {
+               g_InputState.dwKeyPress |= kKeyMenu;
+            }
+            break;
+         }
+      }
+      break;
+#elif SDL_VERSION_ATLEAST(2,0,0)
+   case SDL_CONTROLLERAXISMOTION:
+      g_InputState.joystickNeedUpdate = TRUE;
+      switch (lpEvent->caxis.axis)
+      {
+      case SDL_CONTROLLER_AXIS_LEFTX:
+         if (lpEvent->caxis.value > 3200)
+         {
+            g_InputState.axisX = 1;
+         }
+         else if (lpEvent->caxis.value < -3200)
+         {
+            g_InputState.axisX = -1;
+         }
+         else
+         {
+            g_InputState.axisX = 0;
+         }
+         break;
+
+      case SDL_CONTROLLER_AXIS_LEFTY:
+         if (lpEvent->caxis.value > 3200)
+         {
+            g_InputState.axisY = 1;
+         }
+         else if (lpEvent->caxis.value < -3200)
+         {
+            g_InputState.axisY = -1;
+         }
+         else
+         {
+            g_InputState.axisY = 0;
+         }
+         break;
+      }
+      break;
+
+   case SDL_CONTROLLERBUTTONDOWN:
+   case SDL_CONTROLLERBUTTONUP:
+      {
+         BOOL down = (lpEvent->type == SDL_CONTROLLERBUTTONDOWN);
+         switch (lpEvent->cbutton.button)
+         {
+         case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+            g_InputState.dpadX = down ? -1 : (g_InputState.dpadX == -1 ? 0 : g_InputState.dpadX);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+            g_InputState.dpadX = down ? 1 : (g_InputState.dpadX == 1 ? 0 : g_InputState.dpadX);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_CONTROLLER_BUTTON_DPAD_UP:
+            g_InputState.dpadY = down ? -1 : (g_InputState.dpadY == -1 ? 0 : g_InputState.dpadY);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+            g_InputState.dpadY = down ? 1 : (g_InputState.dpadY == 1 ? 0 : g_InputState.dpadY);
+            g_InputState.joystickNeedUpdate = TRUE;
+            break;
+         case SDL_CONTROLLER_BUTTON_A:
+            if (down)
+            {
+               g_InputState.dwKeyPress |= kKeySearch;
+            }
+            break;
+         case SDL_CONTROLLER_BUTTON_B:
+            if (down)
+            {
+               g_InputState.dwKeyPress |= kKeyMenu;
+            }
+            break;
+         }
+      }
+      break;
+#endif
    case SDL_JOYAXISMOTION:
       g_InputState.joystickNeedUpdate = TRUE;
       //
@@ -740,7 +971,7 @@ PAL_JoystickEventFilter(
       //
       // Pressed the joystick button
       //
-      switch (lpEvent->jbutton.button & 1)
+      switch (lpEvent->jbutton.button)
       {
       case 0:
          g_InputState.dwKeyPress |= kKeyMenu;
@@ -776,25 +1007,34 @@ VOID
  
  --*/
 {
-   if( g_InputState.axisX == 1 && g_InputState.axisY >= 0 )
+   int axisX = g_InputState.axisX;
+   int axisY = g_InputState.axisY;
+
+   if (g_InputState.dpadX != 0 || g_InputState.dpadY != 0)
+   {
+      axisX = g_InputState.dpadX;
+      axisY = g_InputState.dpadY;
+   }
+
+   if( axisX == 1 && axisY >= 0 )
    {
       g_InputState.prevdir = g_InputState.dir;
       g_InputState.dir = kDirEast;
       g_InputState.dwKeyPress |= kKeyRight;
    }
-   else if( g_InputState.axisX == -1 && g_InputState.axisY <= 0 )
+   else if( axisX == -1 && axisY <= 0 )
    {
       g_InputState.prevdir = g_InputState.dir;
       g_InputState.dir = kDirWest;
       g_InputState.dwKeyPress |= kKeyLeft;
    }
-   else if( g_InputState.axisY == 1 && g_InputState.axisX <= 0 )
+   else if( axisY == 1 && axisX <= 0 )
    {
       g_InputState.prevdir = g_InputState.dir;
       g_InputState.dir = kDirSouth;
       g_InputState.dwKeyPress |= kKeyDown;
    }
-   else if( g_InputState.axisY == -1 && g_InputState.axisX >= 0 )
+   else if( axisY == -1 && axisX >= 0 )
    {
       g_InputState.prevdir = g_InputState.dir;
       g_InputState.dir = kDirNorth;
@@ -1234,6 +1474,11 @@ PAL_InitInput(
    // MUST FOR PLATFORMS THAT DOES NOT SUPPORT JOYSTICKS HOTPLUG
    //
 #if PAL_HAS_JOYSTICKS
+#if SDL_VERSION_ATLEAST(3,0,0)
+   SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+#elif SDL_VERSION_ATLEAST(2,0,0)
+   SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+#endif
    PAL_DetectJoystick();
 #endif
 
@@ -1260,6 +1505,19 @@ PAL_ShutdownInput(
 --*/
 {
 #if PAL_HAS_JOYSTICKS
+#if SDL_VERSION_ATLEAST(3,0,0)
+   if (g_pGamepad != NULL)
+   {
+      SDL_CloseGamepad(g_pGamepad);
+      g_pGamepad = NULL;
+   }
+#elif SDL_VERSION_ATLEAST(2,0,0)
+   if (g_pGameController != NULL)
+   {
+      SDL_GameControllerClose(g_pGameController);
+      g_pGameController = NULL;
+   }
+#endif
    if (g_pJoy != NULL)
    {
       SDL_JoystickClose(g_pJoy);
