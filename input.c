@@ -923,6 +923,10 @@ PAL_JoystickEventFilter(
             {
                g_InputState.dwKeyPress |= kKeyMenu;
             }
+            else if (lpEvent->gbutton.button == SDL_GAMEPAD_BUTTON_WEST)
+            {
+               g_InputState.dwKeyPress |= kKeyAuto;
+            }
          }
       }
       break;
@@ -995,6 +999,10 @@ PAL_JoystickEventFilter(
             else if (lpEvent->cbutton.button == g_ControllerCancelButton)
             {
                g_InputState.dwKeyPress |= kKeyMenu;
+            }
+            else if (lpEvent->cbutton.button == SDL_CONTROLLER_BUTTON_X)
+            {
+               g_InputState.dwKeyPress |= kKeyAuto;
             }
          }
       }
