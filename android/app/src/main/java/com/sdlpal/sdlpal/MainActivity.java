@@ -382,11 +382,14 @@ public class MainActivity extends AppCompatActivity {
     public void onStart() {
         super.onStart();
         cachePath = getApplicationContext().getCacheDir().getPath();
-        String dataPath = getApplicationContext().getFilesDir().getPath();
+        dataPath = getApplicationContext().getFilesDir().getPath();
         String embeddedPath = dataPath + "/pal";
         boolean hasEmbedded = ensureEmbeddedAssets(embeddedPath);
         if (hasEmbedded) {
             basePath = embeddedPath;
+        }
+        if (!basePath.isEmpty()) {
+            SetAppPath(basePath, dataPath, cachePath);
         }
         loadPersistedUriFromCache();
         String sdlpalPath = basePath;
