@@ -44,6 +44,7 @@ import androidx.activity.result.*;
 import androidx.activity.result.contract.*;
 
 import java.io.*;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -307,16 +308,41 @@ public class MainActivity extends AppCompatActivity {
                 return false;
             }
             File baseDir = new File(basePath);
-            File marker = new File(baseDir, "ABC.MKF");
+            if (!baseDir.exists() && !baseDir.mkdirs()) {
+                return false;
+            }
+            normalizeEmbeddedAssets(baseDir);
+            File marker = new File(baseDir, "abc.mkf");
             if (marker.exists()) {
                 return true;
             }
             copyAssetDir(am, "pal", baseDir);
+            normalizeEmbeddedAssets(baseDir);
             return marker.exists();
         } catch (Exception e) {
             Log.w(TAG, "Exception: ensureEmbeddedAssets:" + e.toString());
         }
         return false;
+    }
+
+    private void normalizeEmbeddedAssets(File baseDir) {
+        File[] files = baseDir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (!file.isFile()) {
+                continue;
+            }
+            String name = file.getName();
+            String lower = name.toLowerCase(Locale.US);
+            if (!name.equals(lower)) {
+                File target = new File(baseDir, lower);
+                if (!target.exists()) {
+                    file.renameTo(target);
+                }
+            }
+        }
     }
 
     private void copyAssetDir(AssetManager am, String assetPath, File destDir) throws IOException {
@@ -330,7 +356,8 @@ public class MainActivity extends AppCompatActivity {
         }
         for (String name : items) {
             String childPath = assetPath + "/" + name;
-            File outFile = new File(destDir, name);
+            String outName = name.toLowerCase(Locale.US);
+            File outFile = new File(destDir, outName);
             String[] childItems = am.list(childPath);
             if (childItems == null || childItems.length == 0) {
                 copyAssetFile(am, childPath, outFile);
