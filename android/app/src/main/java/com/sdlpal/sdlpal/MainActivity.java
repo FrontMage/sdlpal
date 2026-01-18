@@ -391,6 +391,14 @@ public class MainActivity extends AppCompatActivity {
         if (!basePath.isEmpty()) {
             SetAppPath(basePath, dataPath, cachePath);
         }
+        if (hasEmbedded) {
+            File configFile = new File(dataPath + "/sdlpal.cfg");
+            if (!configFile.exists()) {
+                SettingsActivity.loadConfigFile();
+                SettingsActivity.setConfigBoolean("LaunchSetting", false);
+                SettingsActivity.saveConfigFile();
+            }
+        }
         loadPersistedUriFromCache();
         String sdlpalPath = basePath;
 
