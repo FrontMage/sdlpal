@@ -200,12 +200,14 @@ public class MainActivity extends AppCompatActivity {
         if (path.startsWith("/data/")) {
             try {
                 File file = new File(path);
-                if (mode.equals("w") && !file.exists()) {
-                    file.createNewFile();
-                    file.setReadable(true);
-                    file.setWritable(true);
+                int flags = ParcelFileDescriptor.MODE_READ_ONLY;
+                if (mode.equals("w")) {
+                    flags = ParcelFileDescriptor.MODE_READ_WRITE | ParcelFileDescriptor.MODE_CREATE | ParcelFileDescriptor.MODE_TRUNCATE;
+                } else if (mode.equals("a")) {
+                    flags = ParcelFileDescriptor.MODE_READ_WRITE | ParcelFileDescriptor.MODE_CREATE | ParcelFileDescriptor.MODE_APPEND;
                 }
-                return getFileDescriptorFromUri(Uri.fromFile(file), mode);
+                ParcelFileDescriptor pfd = ParcelFileDescriptor.open(file, flags);
+                return pfd.detachFd();
             } catch (Exception e) {
                 Log.w(TAG, "Exception: SAF_fopen create file for writing:" + e.toString());
                 return -1;
