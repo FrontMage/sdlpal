@@ -125,8 +125,15 @@ public class MainActivity extends AppCompatActivity {
 
     public static Uri getDocumentUriFromPath(String path) {
         try {
-            if(basePath.isEmpty())
+            if (basePath.isEmpty())
                 throw new Exception("basePath is empty");
+            if (basePath.startsWith("/data/") || docUri == null) {
+                File file = new File(path);
+                if (!file.isAbsolute()) {
+                    file = new File(basePath, path);
+                }
+                return Uri.fromFile(file);
+            }
             Context ctx = mSingleton.getApplicationContext();
             path = path.replace(basePath, "");
             path = path.replace("/","%2F");
