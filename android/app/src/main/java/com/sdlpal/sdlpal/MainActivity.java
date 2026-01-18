@@ -26,6 +26,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
 import android.os.*;
 import androidx.annotation.NonNull;
 import android.app.Activity;
@@ -187,8 +188,22 @@ public class MainActivity extends AppCompatActivity {
 
     public static int SAF_fopen(String path, String mode) {
         Context context = mSingleton.getApplicationContext();
-        Uri uri = getDocumentUriFromPath(path);
         mode = mode.substring(0,1);
+        if (path.startsWith("/data/")) {
+            try {
+                File file = new File(path);
+                if (mode.equals("w") && !file.exists()) {
+                    file.createNewFile();
+                    file.setReadable(true);
+                    file.setWritable(true);
+                }
+                return getFileDescriptorFromUri(Uri.fromFile(file), mode);
+            } catch (Exception e) {
+                Log.w(TAG, "Exception: SAF_fopen create file for writing:" + e.toString());
+                return -1;
+            }
+        }
+        Uri uri = getDocumentUriFromPath(path);
         try {
             File file = new File(path);
             DocumentFile documentFile = DocumentFile.fromSingleUri(context, uri);
@@ -211,6 +226,9 @@ public class MainActivity extends AppCompatActivity {
                 uri = Uri.fromFile( file );
         }catch (Exception e) {
             Log.w(TAG, "Exception: SAF_fopen create file for writing:" + e.toString());
+        }
+        if (uri == null) {
+            return -1;
         }
         return getFileDescriptorFromUri(uri, mode);
     }
@@ -237,8 +255,11 @@ public class MainActivity extends AppCompatActivity {
         return docTreeUri;
     }
 
-    protected void loadPersistedUriFromCache() {
+    protected boolean loadPersistedUriFromCache() {
         File persistFile = new File(cachePath + "/persisted");
+        if (!persistFile.exists()) {
+            return false;
+        }
         FileInputStream in;
         try {
             int length = (int) persistFile.length();
@@ -250,19 +271,11 @@ public class MainActivity extends AppCompatActivity {
             setPersistedUri(uri, false); 
             in.close();
             basePath = getPath(uri);
-        }catch(FileNotFoundException e) {
-            blocked = true;
-            alertUser(R.string.toast_requestpermission, new RequestForPermissions() {
-                                                            @Override
-                                                            public void request() {
-                                                                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-                                                                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-                                                                mSingleton.permissionRequestLauncher.launch(i);
-                                                            }
-                                                        });
+            return true;
         }catch(Exception e) {
             Log.w(TAG, "Exception: loadPersistedUriFromCache:"+e.toString());
         }
+        return false;
     }
 
     protected static void savePersistedUriToCache() {
@@ -276,6 +289,66 @@ public class MainActivity extends AppCompatActivity {
             } catch(Exception e) {
                 Log.w(TAG, "Exception: savePersistedUriToCache:"+e.toString());
             }
+        }
+    }
+
+    private boolean ensureEmbeddedAssets(String basePath) {
+        try {
+            AssetManager am = getAssets();
+            String[] entries = am.list("pal");
+            if (entries == null || entries.length == 0) {
+                return false;
+            }
+            File baseDir = new File(basePath);
+            File marker = new File(baseDir, "ABC.MKF");
+            if (marker.exists()) {
+                return true;
+            }
+            copyAssetDir(am, "pal", baseDir);
+            return marker.exists();
+        } catch (Exception e) {
+            Log.w(TAG, "Exception: ensureEmbeddedAssets:" + e.toString());
+        }
+        return false;
+    }
+
+    private void copyAssetDir(AssetManager am, String assetPath, File destDir) throws IOException {
+        String[] items = am.list(assetPath);
+        if (items == null || items.length == 0) {
+            copyAssetFile(am, assetPath, destDir);
+            return;
+        }
+        if (!destDir.exists() && !destDir.mkdirs()) {
+            throw new IOException("mkdirs failed: " + destDir);
+        }
+        for (String name : items) {
+            String childPath = assetPath + "/" + name;
+            File outFile = new File(destDir, name);
+            String[] childItems = am.list(childPath);
+            if (childItems == null || childItems.length == 0) {
+                copyAssetFile(am, childPath, outFile);
+            } else {
+                copyAssetDir(am, childPath, outFile);
+            }
+        }
+    }
+
+    private void copyAssetFile(AssetManager am, String assetPath, File outFile) throws IOException {
+        if (outFile.exists() && outFile.length() > 0) {
+            return;
+        }
+        File parent = outFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("mkdirs failed: " + parent);
+        }
+        try (InputStream in = am.open(assetPath);
+             FileOutputStream out = new FileOutputStream(outFile)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                out.write(buffer, 0, read);
+            }
+            out.flush();
         }
     }
 
@@ -302,14 +375,31 @@ public class MainActivity extends AppCompatActivity {
     public void onStart() {
         super.onStart();
         cachePath = getApplicationContext().getCacheDir().getPath();
-        loadPersistedUriFromCache();
         String dataPath = getApplicationContext().getFilesDir().getPath();
+        String embeddedPath = dataPath + "/pal";
+        boolean hasEmbedded = ensureEmbeddedAssets(embeddedPath);
+        if (hasEmbedded) {
+            basePath = embeddedPath;
+        }
+        loadPersistedUriFromCache();
         String sdlpalPath = basePath;
 
         if (SettingsActivity.loadConfigFile()) {
             String gamePath =  SettingsActivity.getConfigString(SettingsActivity.GamePath, true);
             if (gamePath != null && !gamePath.isEmpty())
                 sdlpalPath = gamePath;
+        }
+        if (sdlpalPath == null || sdlpalPath.isEmpty()) {
+            blocked = true;
+            alertUser(R.string.toast_requestpermission, new RequestForPermissions() {
+                @Override
+                public void request() {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    mSingleton.permissionRequestLauncher.launch(i);
+                }
+            });
+            return;
         }
         SetAppPath(sdlpalPath, dataPath, cachePath);
 

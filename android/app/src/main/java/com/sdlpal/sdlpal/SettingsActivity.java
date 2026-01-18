@@ -302,7 +302,10 @@ public class SettingsActivity extends AppCompatActivity {
                 String basePath = MainActivity.getBasePath();
                 if( requestCode == BROWSE_GAMEDIR_CODE ) {
                     if( !basePath.equals(filePath) ) {
-                        getContentResolver().releasePersistableUriPermission(MainActivity.getDocTreeUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                        Uri oldUri = MainActivity.getDocTreeUri();
+                        if (oldUri != null) {
+                            getContentResolver().releasePersistableUriPermission(oldUri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                        }
                         getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                         MainActivity.setPersistedUri(uri);
                         loadConfigFile();
